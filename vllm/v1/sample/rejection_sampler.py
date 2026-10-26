@@ -21,7 +21,10 @@ from vllm.model_executor.warmup.jit_warmup_triton_helper import (
 from vllm.triton_utils import tl, triton
 from vllm.utils.torch_utils import async_tensor_h2d
 from vllm.v1.outputs import LogprobsLists, LogprobsTensors, SamplerOutput
-from vllm.v1.sample.logits_processor.builtin import MinTokensLogitsProcessor
+from vllm.v1.sample.logits_processor.builtin import (
+    MinPLogitsProcessor,
+    MinTokensLogitsProcessor,
+)
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.ops.bad_words import apply_bad_words_with_drafts
 from vllm.v1.sample.ops.penalties import apply_all_penalties
@@ -552,6 +555,17 @@ def apply_sampling_constraints(
     )
     # NOTE(woosuk): Update `logits` in place to avoid allocating a new tensor.
     logits.div_(temperature.unsqueeze(-1))
+
+    # min_p goes after temperature and before top-k/top-p, the same order as
+    # Sampler.sample, so drafting does not change which tokens min_p keeps.
+    for processor in sampling_metadata.logitsprocs.argmax_invariant:
+        if isinstance(processor, MinPLogitsProcessor) and processor.min_p_count:
+            min_p = expand_batch_to_tokens(
+                processor.min_p.squeeze(-1), cu_num_draft_tokens, num_tokens
+            )
+            probs = logits.softmax(dim=-1)
+            threshold = probs.amax(dim=-1, keepdim=True) * min_p.unsqueeze(-1)
+            logits.masked_fill_(probs < threshold, -float("inf"))
 
     # Get expanded top_k and top_p tensors.
     top_k = None

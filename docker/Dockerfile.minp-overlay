@@ -1,0 +1,5 @@
+# Release image plus this branch's patched files, so nothing is recompiled.
+FROM vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
+ARG SITE=/usr/local/lib/python3.12/dist-packages
+COPY vllm/sampling_params.py ${SITE}/vllm/sampling_params.py
+COPY vllm/v1/sample/rejection_sampler.py ${SITE}/vllm/v1/sample/rejection_sampler.py
